@@ -1,0 +1,52 @@
+[
+  {
+    "cached_question": "What is machine learning?",
+    "test_question": "Explain machine learning to me.",
+    "should_match": true
+  },
+  {
+    "cached_question": "What is machine learning?",
+    "test_question": "Can you define machine learning?",
+    "should_match": true
+  },
+  {
+    "cached_question": "What is machine learning?",
+    "test_question": "What is deep learning?",
+    "should_match": false
+  },
+  {
+    "cached_question": "What is machine learning?",
+    "test_question": "How can I learn machine learning?",
+    "should_match": false
+  },
+  {
+    "cached_question": "What is an API?",
+    "test_question": "Explain what an API does.",
+    "should_match": true
+  },
+  {
+    "cached_question": "What is an API?",
+    "test_question": "How do I build an API?",
+    "should_match": false
+  },
+  {
+    "cached_question": "What is RAG in AI?",
+    "test_question": "Explain retrieval-augmented generation.",
+    "should_match": true
+  },
+  {
+    "cached_question": "What is RAG in AI?",
+    "test_question": "How do I evaluate a RAG pipeline?",
+    "should_match": false
+  },
+  {
+    "cached_question": "What is Python?",
+    "test_question": "What is the Python programming language?",
+    "should_match": true
+  },
+  {
+    "cached_question": "What is Python?",
+    "test_question": "How do I install Python?",
+    "should_match": false
+  }
+]
