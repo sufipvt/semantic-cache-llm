@@ -3,6 +3,11 @@ import faiss
 import numpy as np
 from src.embeddings import generate_embedding
 import time 
+
+total_queries = 0
+cache_hits = 0
+cache_misses = 0
+
 # create faiss index
 index = faiss.IndexFlatIP(384)  # 384 is the dimension of the embeddings
 
@@ -24,40 +29,55 @@ def add_to_cache(question: str, answer: str):
     cached_answer.append(answer)
     cached_timestamps.append(time.time())  # Store the current timestamp
 
+
 def search_cache(question: str):
-    embedding = generate_embedding(question)
-    # If the cache is empty, return a cache miss
+    global total_queries, cache_hits, cache_misses
+
+    total_queries += 1
+
+    # If the cache is empty, count a miss
     if index.ntotal == 0:
+        cache_misses += 1
         return None
-    # convert the new question embedding to a numpy array
+
+    # Generate embedding
     embedding = generate_embedding(question)
     vector = np.array([embedding], dtype=np.float32)
 
-    #find the most similar stored question in the cache
-    scores,indices = index.search(vector, 1)  # 1 - returns single most similar stored vector - search for the closest vector
+    # Find the most similar stored question
+    scores, indices = index.search(vector, 1)
 
-    # extract score and position
     similarity = float(scores[0][0])
     match_index = int(indices[0][0])
 
     print("Similarity score:", round(similarity, 4))
 
     if similarity >= THRESHOLD:
+
+        # Check TTL
         if is_expired(match_index):
             print("CACHE EXPIRED — CACHE MISS")
+            cache_misses += 1
             return None
 
+        # Check intent
         cached_type = get_question_type(cached_question[match_index])
         new_type = get_question_type(question)
 
         if cached_type != new_type:
             print("INTENT MISMATCH — CACHE MISS")
+            cache_misses += 1
             return None
 
         print("CACHE HIT")
+        cache_hits += 1
         return cached_answer[match_index]
 
+    print("CACHE MISS")
+    cache_misses += 1
+
     return None
+
 
 def is_expired(match_index):
     current_time = time.time()
@@ -93,13 +113,26 @@ def get_question_type(question):
 
 if __name__ == "__main__":
 
+    # Add one question to cache
+    add_to_cache(
+        "What is an API?",
+        "An API allows software applications to communicate."
+    )
+
     questions = [
         "What is an API?",
-        "Explain an API",
         "How do I build an API?",
-        "How can I use an API?",
+        "What is machine learning?",
+        "Explain an API",
         "Tell me about APIs"
     ]
 
     for question in questions:
-        print(question, "->", get_question_type(question))
+        print("\nQuestion:", question)
+        answer = search_cache(question)
+        print("Answer:", answer)
+
+    print("\n========== CACHE STATISTICS ==========")
+    print("Total queries:", total_queries)
+    print("Cache hits:", cache_hits)
+    print("Cache misses:", cache_misses)

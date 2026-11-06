@@ -5,6 +5,10 @@ from pathlib import Path
 from src.cache import add_to_cache, search_cache
 from src.llm import get_llm_response
 
+total_llm_calls = 0
+successful_llm_calls = 0
+failed_llm_calls = 0
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 FAQ_FILE = PROJECT_ROOT / "data" / "faqs.json"
 
@@ -18,23 +22,29 @@ def load_faqs():
 
     print(f"Loaded {len(faqs)} FAQs into the cache.\n")
 
-def get_answer(question: str):
-    #search the cache for the answer
+def get_answer(question: str) -> str:
+    global total_llm_calls, successful_llm_calls, failed_llm_calls
+
     cached_answer = search_cache(question)
+
     if cached_answer is not None:
         return cached_answer
-    
+
     print("Calling Groq API...")
 
+    total_llm_calls += 1
+
     try:
-       answer = get_llm_response(question)
+        answer = get_llm_response(question)
+        successful_llm_calls += 1
 
     except Exception as error:
-       print(f"Groq API request failed: {error}")
-       return "Sorry, I couldn't generate an answer. Please try again."
+        failed_llm_calls += 1
+        print(f"Groq API request failed: {error}")
+        return "Sorry, I couldn't generate an answer. Please try again."
 
-    # Cache only successful responses
     add_to_cache(question, answer)
+
     return answer
 
 
