@@ -1,66 +1,69 @@
+from src.cache import (
+    search_cache,
+    add_to_cache,
+    check_redis_connection,
+    validate_question
+)
 
-import json
-from pathlib import Path
-
-from src.cache import add_to_cache, search_cache
+from src.embeddings import generate_embedding
 from src.llm import get_llm_response
 
-total_llm_calls = 0
-successful_llm_calls = 0
-failed_llm_calls = 0
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-FAQ_FILE = PROJECT_ROOT / "data" / "faqs.json"
+def ask_question(question: str) -> str:
 
+    print(f"\nUser Question: {question}")
 
-def load_faqs():
-    with open(FAQ_FILE, "r", encoding="utf-8") as file:
-        faqs = json.load(file)
+    # Step 1: Validate input
+    validate_question(question)
 
-    for faq in faqs:
-        add_to_cache(faq["question"], faq["answer"])
+    embedding = None
+    redis_available = check_redis_connection()
 
-    print(f"Loaded {len(faqs)} FAQs into the cache.\n")
+    # Step 2: Generate embedding and search cache
+    if redis_available:
 
-def get_answer(question: str) -> str:
-    global total_llm_calls, successful_llm_calls, failed_llm_calls
+        try:
+            print("Redis is available. Generating embedding...")
+            embedding = generate_embedding(question)
 
-    cached_answer = search_cache(question)
+        except Exception as e:
+            print(f"Embedding generation failed: {e}")
 
-    if cached_answer is not None:
-        return cached_answer
+        # Search cache only if embedding generation succeeded
+        if embedding is not None:
 
-    print("Calling Groq API...")
+            try:
+                print("Searching Redis cache...")
 
-    total_llm_calls += 1
+                cached_answer = search_cache(question, embedding)
 
-    try:
-        answer = get_llm_response(question)
-        successful_llm_calls += 1
+                if cached_answer is not None:
+                    print("Returning cached response.")
+                    return cached_answer
 
-    except Exception as error:
-        failed_llm_calls += 1
-        print(f"Groq API request failed: {error}")
-        return "Sorry, I couldn't generate an answer. Please try again."
+            except Exception as e:
+                print(f"Cache lookup failed: {e}")
 
-    add_to_cache(question, answer)
+    else:
+        print("Redis unavailable. Skipping cache.")
 
+    # Step 3: Generate answer using Groq
+    print("Calling Groq LLM...")
+
+    answer = get_llm_response(question)
+
+    # Step 4: Store response if caching is possible
+    if redis_available and embedding is not None:
+
+        stored = add_to_cache(question, answer, embedding)
+
+        if stored:
+            print("Response stored in Redis.")
+        else:
+            print("Answer generated but could not be cached.")
+
+    else:
+        print("Skipping cache storage.")
+
+    # Step 5: Return answer
     return answer
-
-
-
-if __name__ == "__main__":
-    load_faqs()
-
-    while True:
-        question = input("\nAsk a question (or type 'exit'): ").strip()
-
-        if question.lower() == "exit":
-            break
-
-        if not question:
-            print("Please enter a question.")
-            continue
-
-        answer = get_answer(question)
-        print("\nAnswer:", answer)

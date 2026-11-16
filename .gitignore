@@ -1,5 +1,26 @@
+# Environment / secrets
 .env
+.env.*
+!.env.example
+
+# Virtual environments
 .venv/
+venv/
+
+# Python
 __pycache__/
-*.pyc
+*.py[cod]
+
+# Testing / coverage
 .pytest_cache/
+.coverage
+htmlcov/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log

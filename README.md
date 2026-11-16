@@ -1,207 +1,444 @@
-# Semantic Cache for LLM Applications
+# Redis Semantic Cache for LLM Applications
 
-A semantic caching prototype designed to reduce unnecessary LLM API calls, response latency, and API usage by reusing answers to semantically similar questions.
+A semantic caching system for LLM applications that uses **Redis Vector Search** to identify semantically similar questions and reuse previously generated responses instead of repeatedly calling an LLM.
 
-Built using Python, Sentence Transformers, FAISS, and the Groq API.
+The project combines Sentence Transformers, Redis, and the Groq API to reduce response latency and unnecessary LLM calls.
 
-## Problem
+## Overview
 
-LLM-powered applications frequently receive repeated or semantically similar questions.
+Traditional caching relies on exact matches. However, users often ask the same question using different wording.
 
-Sending every request to an LLM creates unnecessary API calls, increases response latency, and adds operational costs.
+For example:
 
-Traditional caching relies on exact string matching, meaning even slightly rephrased questions may trigger another LLM request.
+- "What is machine learning?"
+- "Explain machine learning."
+- "Can you define ML?"
 
-## Solution
+A traditional cache may treat these as different queries.
 
-This project implements semantic caching using vector embeddings and similarity search.
-
-Instead of comparing questions word-for-word, it converts them into numerical embeddings and searches for semantically similar cached questions.
-
-- **Cache hit:** Return a previously generated answer when similarity, intent, and expiration checks pass.
-- **Cache miss:** Send the question to the Groq API, generate an answer, and store it for potential reuse.
+This project uses semantic similarity to generate embeddings and search for similar questions stored in Redis. If a sufficiently similar question is found, its cached response is returned. Otherwise, the application calls the Groq LLM and stores the new response.
 
 ## Architecture
 
-1. Receive a user question.
-2. Generate a normalized embedding using Sentence Transformers.
-3. Search the FAISS vector index using inner-product similarity.
-4. Compare the similarity score against the configured threshold.
-5. Apply a heuristic intent check to reduce incorrect cache matches.
-6. Check whether the matched cache entry has expired.
-7. Return the cached answer or call the Groq API.
-8. Store successful LLM responses in the cache.
+```text
+                 User Question
+                       |
+                       v
+                FastAPI Endpoint
+                       |
+                       v
+               Validate Question
+                       |
+                       v
+                Check Redis Health
+                       |
+                       v
+              Generate Embedding
+              Sentence Transformers
+                       |
+                       v
+             Redis Vector Search
+                       |
+                 Intent Filter
+                       |
+                       v
+              KNN Similarity Search
+                       |
+                 Is Cache Hit?
+                  /        \
+                Yes         No
+                 |           |
+                 v           v
+           Return Cached   Call Groq LLM
+             Response          |
+                               v
+                         Generate Answer
+                               |
+                               v
+                         Store in Redis
+                               |
+                               v
+                         Return Answer
+```
+
+If Redis is unavailable, the application skips caching and calls the Groq LLM directly.
 
 ## Tech Stack
 
-| Technology | Purpose |
+| Component | Technology |
 |---|---|
-| Python | Core implementation |
-| Sentence Transformers | Generate text embeddings |
-| all-MiniLM-L6-v2 | Embedding model |
-| FAISS | Vector similarity search |
-| NumPy | Numerical operations |
-| Groq API | Generate LLM responses |
-| python-dotenv | Environment variable management |
-| pytest | Automated testing |
+| Language | Python |
+| API Framework | FastAPI |
+| LLM Provider | Groq API |
+| LLM Model | `openai/gpt-oss-120b` |
+| Embedding Model | `all-MiniLM-L6-v2` |
+| Vector Database | Redis Stack |
+| Vector Search | Redis Vector Search |
+| Similarity Metric | Cosine Distance |
+| Data Storage | Redis Hash |
+| Testing | Pytest |
+| API Testing | HTTPX |
+| Containerization | Docker |
 
 ## Key Features
 
-- **Semantic similarity search:** Identifies similar questions using vector embeddings rather than exact text matching.
-- **FAISS indexing:** Uses `IndexFlatIP` with normalized embeddings for cosine-similarity-based search.
-- **Similarity threshold:** Configurable matching threshold, currently set to `0.80`.
-- **Intent checking:** Uses a lightweight heuristic to distinguish definition, action, and general questions.
-- **TTL-based expiration:** Cache entries expire after one hour.
-- **Cache statistics:** Tracks total queries, cache hits, and cache misses.
-- **LLM integration:** Uses Groq when a valid cached answer is unavailable.
-- **Automated testing:** Covers cache hits, misses, intent mismatches, TTL expiration, and cache statistics.
+### 1. Semantic Caching
 
-## Evaluation
+Uses Sentence Transformers to convert questions into 384-dimensional embeddings.
 
-A custom evaluation dataset containing 10 question pairs was used to test different similarity thresholds.
+Semantically similar questions can retrieve previously generated responses even when their wording differs.
 
-The selected threshold was `0.80`, prioritizing fewer incorrect cache hits over maximizing cache reuse.
+### 2. Redis Vector Search
 
-### Results at threshold 0.80
+Stores question embeddings in Redis Hashes and searches them using Redis Vector Search.
 
-| Metric | Result |
-|---|---:|
-| Accuracy | 90% |
-| Precision | 100% |
-| Recall | 80% |
-| False-hit rate | 0% |
+The application uses K-Nearest Neighbors (KNN) to identify the closest matching question.
 
-These results are specific to the small evaluation dataset and are not production-level performance guarantees.
+### 3. Intent-Based Filtering
 
-### Threshold Comparison
+Before vector search, questions are classified using a rule-based heuristic intent classifier.
 
-| Threshold | Accuracy | Precision | Recall |
-|---|---:|---:|---:|
-| 0.70 | 70% | 66.67% | 80% |
-| 0.75 | 80% | 80% | 80% |
-| 0.80 | 90% | 100% | 80% |
-| 0.85 | 80% | 100% | 60% |
-| 0.90 | 60% | 100% | 20% |
+Supported categories:
 
-Evaluation also revealed that the embedding model struggled to associate the abbreviation "RAG" with "retrieval-augmented generation."
+- Comparison
+- Troubleshooting
+- Procedure
+- Definition
+- General
 
-This demonstrates that threshold tuning alone cannot solve every semantic matching problem.
+Redis applies an intent TAG filter during vector search to restrict candidate matches.
 
-## Performance Benchmark
+### 4. Similarity Threshold
 
-A small benchmark compared local cache lookup latency against direct Groq API response latency.
+The current cache similarity threshold is:
 
-| Operation | Average Latency |
-|---|---:|
-| Cache lookup | 60.34 ms |
-| Groq API response | 0.93 seconds |
-
-**Observed speed improvement: approximately 15.35x.**
-
-This benchmark used a limited number of requests. Actual performance varies with hardware, network conditions, embedding generation, and LLM response time.
-
-## Automated Tests
-
-Run the test suite from the project root:
-
-```bash
-python -m pytest -v
+```python
+THRESHOLD = 0.20
 ```
 
-The test suite covers:
+A result is considered a cache hit when its cosine distance is less than or equal to the threshold.
 
-- Cache hit
-- Cache miss
-- Intent mismatch
-- TTL expiration
-- Cache statistics
+The threshold is experimental and has not been calibrated across a broad evaluation dataset.
+
+### 5. TTL-Based Expiration
+
+Cached entries automatically expire after:
+
+```python
+TTL = 3600  # 1 hour
+```
+
+This prevents cached responses from remaining indefinitely.
+
+### 6. Redis Fallback
+
+If Redis is unavailable, the application bypasses caching and calls the Groq API directly.
+
+This allows the application to continue answering questions without Redis, although caching benefits are temporarily unavailable.
+
+### 7. Cache Statistics
+
+Tracks:
+
+- Total queries
+- Cache hits
+- Cache misses
+- Cache hit rate
+
+Statistics are maintained in application memory and reset when the application restarts.
 
 ## Project Structure
 
 ```text
 semantic-cache-llm/
 │
+├── benchmarks/
+│   └── benchmark.py
+│
 ├── data/
 │   ├── evaluation.json
 │   └── faqs.json
 │
 ├── src/
-│   ├── benchmark.py
+│   ├── __init__.py
+│   ├── api.py
 │   ├── cache.py
+│   ├── create_index.py
 │   ├── embeddings.py
 │   ├── evaluation.py
 │   ├── llm.py
-│   ├── main.py
-│   └── __init__.py
+│   └── main.py
 │
 ├── tests/
-│   └── test_cache.py
+│   ├── test_api.py
+│   └── test_intent.py
 │
 ├── .env.example
 ├── .gitignore
-├── requirements.txt
-└── README.md
+├── README.md
+└── requirements.txt
 ```
 
-## Setup and Installation
+## Getting Started
 
-### 1. Clone the repository
+### Prerequisites
+
+Install the following:
+
+- Python 3.12+
+- Docker
+- Redis Stack
+- Groq API key
+
+### 1. Clone the Repository
 
 ```bash
-git clone <https://github.com/sufipvt/semantic-cache-llm>
+git clone https://github.com/sufipvt/semantic-cache-llm.git
+
 cd semantic-cache-llm
 ```
 
-### 2. Create a virtual environment
+### 2. Create a Virtual Environment
 
-```powershell
+```bash
 python -m venv .venv
 ```
 
-Activate it:
+Activate it on Windows:
 
-```powershell
-.venv\Scripts\Activate.ps1
+```cmd
+.venv\Scripts\activate
 ```
 
-### 3. Install dependencies
+### 3. Install Dependencies
 
-```powershell
+```bash
 pip install -r requirements.txt
 ```
 
-### 4. Configure environment variables
+### 4. Configure Environment Variables
 
-Create a `.env` file in the project root.
+Copy the example environment file:
 
-Add your Groq API key:
+```cmd
+copy .env.example .env
+```
+
+Add your Groq API key and configure the environment variables using the names defined in `.env.example`.
+
+Never commit your actual `.env` file or API credentials.
+
+### 5. Start Redis Stack
+
+Run Redis Stack using Docker:
+
+```bash
+docker run -d \
+  --name semantic-redis \
+  -p 6379:6379 \
+  redis/redis-stack:latest
+```
+
+Verify the Redis connection:
+
+```bash
+docker exec -it semantic-redis redis-cli
+```
+
+Inside the Redis CLI:
+
+```redis
+PING
+```
+
+Expected response:
 
 ```text
-GROQ_API_KEY=your_groq_api_key_here
+PONG
 ```
 
-Replace the placeholder with your own API key.
+### 6. Create the Redis Vector Index
 
-**Never commit your `.env` file or expose your API key publicly.**
+Run the index initialization script:
 
-### 5. Run the application
-
-```powershell
-python -m src.main
+```bash
+python -m src.create_index
 ```
 
-Enter questions in the terminal. Type `exit` to stop the application.
+The script creates the Redis vector index with:
 
-## Current Implementation Boundaries
+| Configuration | Value |
+|---|---|
+| Index name | `llm_cache_idx` |
+| Key prefix | `llmcache:` |
+| Storage type | HASH |
+| Vector dimension | 384 |
+| Algorithm | FLAT |
+| Distance metric | COSINE |
+| Intent field | TAG |
 
-- Cache entries are stored in memory and disappear when the application restarts.
-- Expired entries are treated as cache misses, but their vectors are not physically removed from FAISS.
-- Intent checking is heuristic-based and may reject valid matches or accept unsuitable ones.
-- Embedding models may fail to recognize certain technical synonyms and abbreviations.
-- Evaluation uses a small custom dataset.
-- Benchmark results are based on a limited number of requests.
-- The implementation is currently a single-process prototype, not a distributed caching service.
+If the index already exists, the script reports that instead of attempting to recreate it.
+
+### 7. Start the FastAPI Server
+
+```bash
+uvicorn src.api:app --reload
+```
+
+The API will be available at:
+
+```text
+http://127.0.0.1:8000
+```
+
+Interactive API documentation:
+
+```text
+http://127.0.0.1:8000/docs
+```
+
+## API Endpoints
+
+### POST `/ask`
+
+Submit a question to the application.
+
+Request:
+
+```json
+{
+  "question": "What is machine learning?"
+}
+```
+
+Response:
+
+```json
+{
+  "question": "What is machine learning?",
+  "answer": "Machine learning is a branch of artificial intelligence..."
+}
+```
+
+The answer may come from Redis or the Groq LLM, depending on whether a suitable cached result is found.
+
+### GET `/stats`
+
+Returns cache statistics.
+
+Example:
+
+```json
+{
+  "total_queries": 10,
+  "cache_hits": 6,
+  "cache_misses": 4,
+  "hit_rate": 0.6
+}
+```
+
+### GET `/health`
+
+Checks API and Redis health.
+
+Example:
+
+```json
+{
+  "api": "healthy",
+  "redis": "connected",
+  "cache": "available",
+  "status": "healthy"
+}
+```
+
+## Running Tests
+
+Run the test suite:
+
+```bash
+python -m pytest -v
+```
+
+Current test coverage includes:
+
+- FastAPI health endpoint
+- Cache statistics endpoint
+- Question submission endpoint
+- Empty and whitespace-only question validation
+- Rule-based intent classification
+
+Latest verified result:
+
+```text
+14 passed
+```
+
+## Performance Benchmark
+
+The project includes a benchmark comparing direct Groq LLM calls against Redis semantic cache lookups.
+
+Run:
+
+```bash
+python -m benchmarks.benchmark
+```
+
+### Latest Benchmark Results
+
+| Metric | Direct LLM | Redis Cache |
+|---|---:|---:|
+| Average latency | 0.6050 s | 0.0648 s |
+| Median latency | 0.5873 s | 0.0527 s |
+| Minimum latency | 0.3051 s | 0.0283 s |
+| Maximum latency | 1.4057 s | 0.1250 s |
+
+**Measured speed improvement: 9.34x**
+
+Additional results:
+
+- Iterations: 10
+- LLM calls avoided: 10
+- Cache correctness: True
+
+### Benchmark Methodology
+
+The benchmark compares 10 direct Groq requests against 10 Redis cache hits for the same question.
+
+The embedding model and Redis search are warmed up before timing.
+
+Cache latency includes embedding generation and Redis vector search.
+
+**Important:** These results represent a repeated-query, cache-friendly workload. Actual performance will vary depending on query distribution, cache hit rate, network conditions, and LLM response times. The 9.34x result should not be interpreted as a universal performance guarantee.
+
+## Current Limitations
+
+- Intent classification uses rule-based heuristics rather than a trained ML model.
+- The similarity threshold is experimental and requires broader evaluation.
+- Cache statistics are stored in application memory and reset after restart.
+- The benchmark uses repeated identical questions rather than a representative production workload.
+- Redis fallback is implemented, but not every possible failure scenario has been independently tested.
+- The current implementation uses a single Redis instance and does not include distributed deployment or authentication configuration.
+
+## Future Improvements
+
+Potential directions for further development:
+
+- Evaluate and calibrate similarity thresholds using a larger dataset.
+- Add persistent cache analytics.
+- Benchmark using realistic query distributions.
+- Explore more advanced cache invalidation strategies.
+- Add monitoring and observability.
+- Evaluate performance under concurrent requests.
 
 ## Author
 
-Built as a hands-on project to explore semantic caching, vector similarity search, LLM optimization, and evaluation techniques.
+**Sufiyan Rizvi**
+
+B.Tech Computer Science and Engineering (AI & ML)
+
+GitHub: https://github.com/sufipvt
+
+---
+
+If you find this project useful, consider giving the repository a star.

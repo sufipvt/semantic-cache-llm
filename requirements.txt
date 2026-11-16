@@ -1,7 +1,10 @@
-# Add project dependencies here.
 groq
 sentence-transformers
-faiss-cpu
 numpy
 python-dotenv
+redis
+fastapi
+uvicorn
+pydantic
+httpx
 pytest
